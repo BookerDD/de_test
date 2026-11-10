@@ -1,0 +1,52 @@
+name: test_umnaya_logistika
+
+include:
+  - docker-compose.airflow.yaml
+  - docker-compose.superset.yaml
+
+configs:
+  create_meta_dbs:
+    content: |
+      CREATE DATABASE airflow;
+      CREATE DATABASE superset;
+
+services:
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: deals_bigdata
+    configs:
+      - source: create_meta_dbs
+        target: /docker-entrypoint-initdb.d/00_create_meta_dbs.sql
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./sql/schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
+      - ./sql/synthetic.sql:/docker-entrypoint-initdb.d/02_synthetic.sql:ro
+    ports:
+      - "${POSTGRES_HOST_PORT:-5433}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U $${POSTGRES_USER} -d deals_bigdata"]
+      interval: 10s
+      retries: 10
+      start_period: 10m
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:24.8
+    environment:
+      CLICKHOUSE_DB: mart
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-default}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-clickhouse}
+    volumes:
+      - clickhouse-data:/var/lib/clickhouse
+    ports:
+      - "${CLICKHOUSE_HOST_PORT:-8123}:8123"
+    healthcheck:
+      test: ["CMD-SHELL", "clickhouse-client --user $${CLICKHOUSE_USER} --password $${CLICKHOUSE_PASSWORD} --query 'SELECT 1'"]
+      interval: 10s
+      retries: 10
+
+volumes:
+  postgres-data:
+  clickhouse-data:

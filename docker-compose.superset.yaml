@@ -1,0 +1,37 @@
+x-superset-common: &superset-common
+  image: test_umnaya_logistika/superset:4.1.2
+  build:
+    context: .
+    dockerfile: docker/superset.Dockerfile
+  environment:
+    SUPERSET_SECRET_KEY: ${SUPERSET_SECRET_KEY:-change-me-superset-secret-key}
+    SUPERSET_DB_URI: postgresql+psycopg2://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/superset
+  volumes:
+    - superset-home:/app/superset_home
+    - ./superset:/app/superset_import:ro
+
+services:
+  superset-init:
+    <<: *superset-common
+    command: >
+      /bin/sh -c "superset db upgrade &&
+      (superset fab create-admin --username ${SUPERSET_ADMIN_USERNAME:-admin} --firstname Admin --lastname Admin --email admin@example.com --password ${SUPERSET_ADMIN_PASSWORD:-admin} || true) &&
+      superset init &&
+      superset import-dashboards -p /app/superset_import/dashboard.zip -u ${SUPERSET_ADMIN_USERNAME:-admin} &&
+      superset set-database-uri -d 'ClickHouse Connect (Superset)' -u clickhousedb://${CLICKHOUSE_USER:-default}:${CLICKHOUSE_PASSWORD:-clickhouse}@clickhouse:8123/mart &&
+      superset set-database-uri -d Postgres -u postgresql+psycopg2://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/deals_bigdata"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  superset:
+    <<: *superset-common
+    command: /usr/bin/run-server.sh
+    ports:
+      - "${SUPERSET_HOST_PORT:-8088}:8088"
+    depends_on:
+      superset-init:
+        condition: service_completed_successfully
+
+volumes:
+  superset-home:
